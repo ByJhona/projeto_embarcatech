@@ -43,6 +43,8 @@ pico_set_program_version(treinamento_rede_neural "0.1")
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(treinamento_rede_neural 0)
 pico_enable_stdio_usb(treinamento_rede_neural 0)
+add_library(kissfft STATIC kiss_fft.c kiss_fftr.c)
+
 
 # Add the standard library to the build
 target_link_libraries(treinamento_rede_neural
@@ -56,6 +58,9 @@ target_include_directories(treinamento_rede_neural PRIVATE
 # Add any user requested libraries
 target_link_libraries(treinamento_rede_neural 
         pico_cyw43_arch_lwip_poll
+        hardware_adc
+        hardware_dma
+        kissfft
 
         )
 
