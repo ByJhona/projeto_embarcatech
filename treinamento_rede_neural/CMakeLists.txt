@@ -44,11 +44,14 @@ pico_set_program_version(treinamento_rede_neural "0.1")
 pico_enable_stdio_uart(treinamento_rede_neural 0)
 pico_enable_stdio_usb(treinamento_rede_neural 0)
 add_library(kissfft STATIC kiss_fft.c kiss_fftr.c)
+add_library(cjson cJSON.c) 
 
 
 # Add the standard library to the build
 target_link_libraries(treinamento_rede_neural
-        pico_stdlib)
+        pico_stdlib
+        cjson)
+
 
 # Add the standard include files to the build
 target_include_directories(treinamento_rede_neural PRIVATE
@@ -61,6 +64,7 @@ target_link_libraries(treinamento_rede_neural
         hardware_adc
         hardware_dma
         kissfft
+        cJSON
 
         )
 
