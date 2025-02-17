@@ -3,8 +3,11 @@
 #include "pico/cyw43_arch.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
-#include "kiss_fft.h"
+#include "lwip/pbuf.h"
+#include "lwip/tcp.h"
 #include "cJSON.h"
+#include "time.h"
+
 
 #define NOME_WIFI "EmbarcaTech"
 #define SENHA_WIFI "jhonatan"
@@ -16,20 +19,19 @@
 #define MICROFONE_CANAL 2
 #define BOTAO_A 5
 
-#define AMOSTRAS_ADC 8000 // 4khz * 2 segundos
-#define FREQ_ADC 4000     // 48Mhz / 8k amostras
+#define AMOSTRAS_ADC 16000 // 8khz * 2 segundos
+#define FREQ_ADC 8000     // 48Mhz / 8k amostras
 #define FREQ_PADRAO_ADC 48000000
 #define VALOR_MAX_12_BITS 4095
 #define VOLT_3_3 3.3
 #define ADC_CONV_FACTOR (3.3f / 4095.0f)
+#define ENDERECO_IP "192.168.1.100"
+#define PORTA_TCP 80
 
 int16_t adc_buffer[AMOSTRAS_ADC];
 uint dma_canal;
 dma_channel_config dma_cfg;
-
-kiss_fft_cfg fft_cfg;
-kiss_fft_cpx fft_input[AMOSTRAS_ADC];  // entrada da FFT
-kiss_fft_cpx fft_output[AMOSTRAS_ADC]; // saída da FFT
+static struct tcp_pcb *tcp_cliente;
 
 void configurar_wifi(void);
 void configurar_gpio(uint8_t);
@@ -39,9 +41,10 @@ void amostrar_audio(void);
 void configurar_dma(void);
 void remover_componente_dc(void);
 float converter_adc_volts(int16_t);
-void preparar_fft(void);
-void executar_fft(void);
+void conectar_servidor(void);
+err_t enviar_amostras_servidor(void *, struct tcp_pcb *, err_t);
 void criar_json();
+
 
 int main()
 {
@@ -49,78 +52,76 @@ int main()
     configurar_gpio(LED_ALERTA_PINO);
     configurar_gpio(LED_ERRO_PINO);
     configurar_gpio(LED_OK_PINO);
-    // configurar_wifi();
+    configurar_wifi();
     configurar_adc();
     configurar_dma();
-    fft_cfg = kiss_fft_alloc(AMOSTRAS_ADC, 0, NULL, NULL); // 0 para FFT, 1 para iFFT
 
     while (true)
     {
-        //  cyw43_arch_poll();
+         cyw43_arch_poll();
         bool clk_bnt_a = !gpio_get(BOTAO_A);
 
         if (clk_bnt_a)
         {
             amostrar_audio();
-            remover_componente_dc();
-            executar_fft();
+            conectar_servidor();
             criar_json();
+            
         }
 
         sleep_ms(1000);
     }
 }
-void criar_json()
-{
-    cJSON *root = cJSON_CreateObject();
-    cJSON *payload = cJSON_CreateObject();
-    cJSON *sensors = cJSON_CreateArray();
-    cJSON *values = cJSON_CreateArray();
 
-    // Adiciona informações básicas
-    cJSON_AddStringToObject(root, "signature", "0");
-    cJSON_AddStringToObject(payload, "device_name", "RP2040");
-    cJSON_AddStringToObject(payload, "device_type", "Pico");
-    cJSON_AddNumberToObject(payload, "interval_ms", 2.5);
+void criar_json() {
+    cJSON *json_obj = cJSON_CreateObject();
+    
+    uint64_t identificador_tempo = to_ms_since_boot(get_absolute_time());
+    cJSON_AddNumberToObject(json_obj, "identificador", identificador_tempo);
 
-    // Adiciona informações do sensor
-    cJSON *sensor = cJSON_CreateObject();
-    cJSON_AddStringToObject(sensor, "name", "microfone");
-    cJSON_AddStringToObject(sensor, "units", "volts");
-    cJSON_AddItemToArray(sensors, sensor);
-    cJSON_AddItemToObject(payload, "sensors", sensors);
-
-    // Adiciona os valores do ADC
-    cJSON *valueArray = cJSON_CreateArray();
-    for (int i = 0; i < AMOSTRAS_ADC; i++)
-    {
-        cJSON_AddItemToArray(valueArray, cJSON_CreateNumber(adc_buffer[i] * ADC_CONV_FACTOR)); // Converte direto para volts
+    cJSON *amostras = cJSON_CreateArray();
+    for (u16_t i = 0; i < 1000; i++) {
+        cJSON_AddItemToArray(amostras, cJSON_CreateNumber(adc_buffer[i]));
     }
-    cJSON_AddItemToObject(payload, "values", valueArray);
-    cJSON_AddItemToObject(root, "payload", payload);
 
-    // Imprime o JSON
-    char *json_string = cJSON_Print(root);
-    printf("%s\n", json_string); // Testa no terminal
+    cJSON *final = cJSON_CreateObject();
+    final = cJSON_CreateBool(false);
+    cJSON_AddItemToObject(json_obj, "final", final);
+    cJSON_AddItemToObject(json_obj, "amostras", amostras);
 
-    // Libera memória
-    cJSON_Delete(root);
-    free(json_string);
+    char *string = cJSON_Print(json_obj);
+    printf("%s\n", string);
+
+    free(string);
+    cJSON_Delete(json_obj);
 }
 
-void preparar_fft()
+void conectar_servidor()
 {
-    for (int i = 0; i < AMOSTRAS_ADC; i++)
-    {
-        fft_input[i].r = converter_adc_volts(adc_buffer[i]); // parte real
-        fft_input[i].i = 0;                                  // parte imaginária (0 para sinais reais)
-    }
+
+    tcp_cliente = tcp_new();
+
+    ip_addr_t ip_servidor;
+
+    ipaddr_aton(ENDERECO_IP, &ip_servidor);
+    tcp_connect(tcp_cliente, &ip_servidor, PORTA_TCP, enviar_amostras_servidor);
 }
-void executar_fft()
+
+err_t enviar_amostras_servidor(void *arg, struct tcp_pcb *tpcb, err_t err)
 {
-    preparar_fft();
-    kiss_fft(fft_cfg, fft_input, fft_output); // executa a FFT
-    kiss_fft_free(fft_cfg);
+    printf("OIII");
+    if (err == ERR_OK)
+    {
+
+        cJSON *json_array = cJSON_CreateArray();
+
+
+
+        //tcp_write(tpcb, cabecalho, strlen(cabecalho), TCP_WRITE_FLAG_COPY);
+        //tcp_output(tpcb);
+    }
+
+    return ERR_OK;
 }
 
 void configurar_dma()
