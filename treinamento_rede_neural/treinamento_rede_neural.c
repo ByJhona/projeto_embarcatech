@@ -8,7 +8,6 @@
 #include "cJSON.h"
 #include "time.h"
 
-
 #define NOME_WIFI "EmbarcaTech"
 #define SENHA_WIFI "jhonatan"
 
@@ -20,18 +19,24 @@
 #define BOTAO_A 5
 
 #define AMOSTRAS_ADC 16000 // 8khz * 2 segundos
-#define FREQ_ADC 8000     // 48Mhz / 8k amostras
+#define FREQ_ADC 8000      // 48Mhz / 8k amostras
 #define FREQ_PADRAO_ADC 48000000
 #define VALOR_MAX_12_BITS 4095
 #define VOLT_3_3 3.3
 #define ADC_CONV_FACTOR (3.3f / 4095.0f)
-#define ENDERECO_IP "192.168.1.100"
-#define PORTA_TCP 80
+#define ENDERECO_IP "192.168.231.149"
+#define PORTA_TCP 8080
+
+// Configurações do keep-alive
+#define KEEP_ALIVE_IDLE_TIME 5  // Tempo de inatividade em segundos
+#define KEEP_ALIVE_INTERVAL 2   // Intervalo entre pacotes keep-alive em segundos
+#define KEEP_ALIVE_MAX_PROBES 3 // Número máximo de pacotes keep-alive
 
 int16_t adc_buffer[AMOSTRAS_ADC];
 uint dma_canal;
 dma_channel_config dma_cfg;
 static struct tcp_pcb *tcp_cliente;
+volatile int8_t numero_pacotes = 16;
 
 void configurar_wifi(void);
 void configurar_gpio(uint8_t);
@@ -43,8 +48,16 @@ void remover_componente_dc(void);
 float converter_adc_volts(int16_t);
 void conectar_servidor(void);
 err_t enviar_amostras_servidor(void *, struct tcp_pcb *, err_t);
+err_t enviar_dados_callback(void *, struct tcp_pcb *, u16_t);
+err_t contar_pacotes(void *, struct tcp_pcb *, u16_t);
+static err_t tcp_enviado_callback(void *arg, struct tcp_pcb *tpcb, u16_t len);
+err_t teste1(void *arg, struct tcp_pcb *tpcb, err_t err);
+err_t teste2(void *arg, struct tcp_pcb *tpcb, u16_t len);
+
 void criar_json();
 
+volatile int limite_inferior = 0;
+volatile int limite_superior = 200;
 
 int main()
 {
@@ -58,70 +71,161 @@ int main()
 
     while (true)
     {
-         cyw43_arch_poll();
+        cyw43_arch_poll();
         bool clk_bnt_a = !gpio_get(BOTAO_A);
 
         if (clk_bnt_a)
         {
             amostrar_audio();
             conectar_servidor();
-            criar_json();
-            
+            remover_componente_dc();
+            // criar_json();
         }
 
         sleep_ms(1000);
     }
 }
 
-void criar_json() {
-    cJSON *json_obj = cJSON_CreateObject();
-    
-    uint64_t identificador_tempo = to_ms_since_boot(get_absolute_time());
-    cJSON_AddNumberToObject(json_obj, "identificador", identificador_tempo);
-
-    cJSON *amostras = cJSON_CreateArray();
-    for (u16_t i = 0; i < 1000; i++) {
-        cJSON_AddItemToArray(amostras, cJSON_CreateNumber(adc_buffer[i]));
-    }
-
-    cJSON *final = cJSON_CreateObject();
-    final = cJSON_CreateBool(false);
-    cJSON_AddItemToObject(json_obj, "final", final);
-    cJSON_AddItemToObject(json_obj, "amostras", amostras);
-
-    char *string = cJSON_Print(json_obj);
-    printf("%s\n", string);
-
-    free(string);
-    cJSON_Delete(json_obj);
-}
-
 void conectar_servidor()
 {
+    alterar_status(false, true, false);
 
     tcp_cliente = tcp_new();
 
     ip_addr_t ip_servidor;
 
     ipaddr_aton(ENDERECO_IP, &ip_servidor);
+
     tcp_connect(tcp_cliente, &ip_servidor, PORTA_TCP, enviar_amostras_servidor);
 }
 
+
+
 err_t enviar_amostras_servidor(void *arg, struct tcp_pcb *tpcb, err_t err)
 {
-    printf("OIII");
+    alterar_status(false, false, true);
+
     if (err == ERR_OK)
     {
+        cJSON *json_obj = cJSON_CreateObject();
+        uint64_t identificador_tempo = to_ms_since_boot(get_absolute_time());
 
-        cJSON *json_array = cJSON_CreateArray();
+        cJSON_AddNumberToObject(json_obj, "identificador", identificador_tempo);
+        cJSON *amostras = cJSON_CreateArray();
+        for (uint16_t i = 0; i < 1000; i++)
+        {
+            cJSON_AddItemToArray(amostras, cJSON_CreateNumber(adc_buffer[i]));
+        }
+        cJSON_AddItemToObject(json_obj, "amostras", amostras);
 
+        char *string = cJSON_PrintUnformatted(json_obj); // `PrintUnformatted` evita quebra de linha
+        int tamanho = strlen(string);
 
+        char *http_request = (char *)malloc(tamanho + 200); // Aloca memória dinamicamente
+        if (!http_request)
+        {
+            cJSON_Delete(json_obj);
+            free(string);
+            return ERR_MEM;
+        }
 
-        //tcp_write(tpcb, cabecalho, strlen(cabecalho), TCP_WRITE_FLAG_COPY);
-        //tcp_output(tpcb);
+        snprintf(http_request, tamanho + 200,
+                 "POST /enviar_amostras HTTP/1.1\r\n"
+                 "Host: 192.168.231.149:8080\r\n"
+                 "Content-Type: application/json\r\n"
+                 "Content-Length: %d\r\n"
+                 "Connection: keep-alive\r\n"
+                 "\r\n"
+                 "%s",
+                 tamanho, string);
+
+        err_t erro = tcp_write(tpcb, http_request, strlen(http_request), TCP_WRITE_FLAG_COPY);
+        if (erro == ERR_OK)
+        {
+            tcp_output(tpcb);
+        }
+        else if (erro == ERR_MEM)
+        {
+            // Repetir tentativa após um curto atraso
+            int tentativas = 5;
+            while (tentativas-- > 0 && erro == ERR_MEM)
+            {
+                sleep_ms(100);
+                erro = tcp_write(tpcb, http_request, strlen(http_request), TCP_WRITE_FLAG_COPY);
+                if (erro == ERR_OK)
+                    tcp_output(tpcb);
+            }
+        }
+
+        // tcp_sent(tpcb, tcp_enviado_callback); // Define o callback quando os dados forem enviados
+        free(http_request);
+        free(string);
+        cJSON_Delete(json_obj);
+
+        return erro;
     }
 
-    return ERR_OK;
+    alterar_status(false, false, false);
+    return ERR_TIMEOUT;
+}
+
+err_t enviar_dados_callback(void *arg, struct tcp_pcb *tpcb, u16_t len)
+{
+    if (numero_pacotes >= 0)
+    {
+        alterar_status(false, false, true);
+
+        uint64_t identificador_tempo = to_ms_since_boot(get_absolute_time());
+        uint16_t i;
+        uint16_t j;
+        uint16_t limite = 0;
+
+        cJSON *json_obj = cJSON_CreateObject();
+        cJSON_AddNumberToObject(json_obj, "identificador", identificador_tempo);
+
+        cJSON *amostras = cJSON_CreateArray();
+
+        for (i = 0; i < 1000; i++)
+        {
+            cJSON_AddItemToArray(amostras, cJSON_CreateNumber(adc_buffer[i]));
+        }
+
+        cJSON_AddItemToObject(json_obj, "amostras", amostras);
+
+        char *string = cJSON_Print(json_obj);
+
+        char http_request[16000];
+
+        snprintf(http_request, sizeof(http_request),
+                 "POST /enviar_amostras HTTP/1.1\r\n"
+                 "Host: 192.168.107.149:8080\r\n"
+                 "Content-Type: application/json\r\n"
+                 "Content-Length: %d\r\n"
+                 "\r\n"
+                 "%s",
+                 strlen(string), string);
+
+        err_t err = tcp_write(tpcb, http_request, strlen(http_request), TCP_WRITE_FLAG_COPY);
+
+        int8_t tentativas = 100;
+        while (tentativas >= 0 && err != ERR_MEM)
+        {
+            alterar_status(true, false, false);
+            sleep_ms(100);
+            err = tcp_write(tpcb, http_request, strlen(http_request), TCP_WRITE_FLAG_COPY);
+            tentativas--;
+        }
+
+        free(string);
+        cJSON_Delete(json_obj);
+
+        numero_pacotes--;
+    }
+    else
+    {
+        alterar_status(false, false, false);
+        numero_pacotes = 16;
+    }
 }
 
 void configurar_dma()
@@ -148,7 +252,6 @@ void amostrar_audio()
     adc_run(true);
     dma_channel_wait_for_finish_blocking(dma_canal);
     adc_run(false);
-    alterar_status(false, true, false);
 }
 
 void remover_componente_dc()
@@ -164,7 +267,7 @@ void remover_componente_dc()
 
     for (int i = 0; i < AMOSTRAS_ADC; i++)
     {
-        adc_buffer[i] = (int16_t)adc_buffer[i] - medida;
+        adc_buffer[i] = (int16_t)adc_buffer[i] - 2047;
     }
 }
 
@@ -211,7 +314,7 @@ void configurar_wifi()
     alterar_status(false, true, true);
 
     printf("Conectando ao wifi...\n");
-    if (cyw43_arch_wifi_connect_timeout_ms(NOME_WIFI, SENHA_WIFI, CYW43_AUTH_WPA2_AES_PSK, 30000))
+    if (cyw43_arch_wifi_connect_timeout_ms(NOME_WIFI, SENHA_WIFI, CYW43_AUTH_WPA2_AES_PSK, 60000))
     {
         printf("Conexão do wifi falhou.\n");
         alterar_status(true, false, false);
