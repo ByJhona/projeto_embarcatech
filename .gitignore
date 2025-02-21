@@ -1,0 +1,33 @@
+# Compilados e binários
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.out
+*.a
+*.exe
+
+# Pastas de build
+/build/
+
+
+
+
+# Logs e arquivos temporários
+*.log
+*.tmp
+*.swp
+*.bak
+
+# Configurações específicas de IDEs
+.vscode/
+.idea/
+*.code-workspace
+
+# Dependências
+node_modules/
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
