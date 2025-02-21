@@ -33,6 +33,7 @@ bool estado_anterior_botao_A = false;
 
 int main()
 {
+    // teste
     stdio_init_all();
     configurar_gpio(PINO_LED_AZUL);
     configurar_gpio(PINO_LED_VERMELHO);
