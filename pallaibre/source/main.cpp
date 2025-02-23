@@ -1,71 +1,10 @@
-#include <cstdlib>
-#include "pico/stdlib.h"
-#include "hardware/adc.h"
-#include "hardware/dma.h"
-#include "edge-impulse-sdk/classifier/ei_run_classifier.h"
-
-void gravar_audio(void);
-void alterar_status(bool, bool, bool);
-void configurar_gpio(uint8_t);
-void configurar_adc(uint8_t, uint8_t);
-void configurar_dma(void);
-void enviar_amostras_microfone_serial(void);
-void remover_componente_dc(void);
-void configurar_classificador(void);
-int classificar_audio(size_t, size_t, float *);
-void classificar_letra(void);
-void gerar_letra_aleatoria(void);
-
-#define PINO_LED_AZUL 12
-#define PINO_LED_VERDE 11
-#define PINO_LED_VERMELHO 13
-#define PINO_MICROFONE 28
-#define CANAL_MICROFONE 2
-#define PINO_BOTAO_A 5
-#define PINO_BOTAO_B 6
-#define NUMERO_AMOSTRAS_ADC 16000
-#define FREQUENCIA_DESEJADA_ADC 16000
-#define FREQUENCIA_PADRAO_ADC 48000000
-#define OFFSET_DC_ADC 2048
-#define NUM_LETRAS 2
-
-typedef struct
-{
-    uint8_t id;
-    char descricao[2];
-} Vogal;
-
-typedef struct
-{
-    Vogal letra;
-    float probabilidade;
-} Classificador;
-
-Classificador letra_classificada = {{0, ""}, -1};
-Vogal letra_gerada = {0, ""};
-Vogal vogais[5] = {{0, "A"}, {1, "E"}, {2, "I"}, {3, "O"}, {4, "U"}};
-
-Classificador letras_exemplo[2] = {{{0, "A"}, 0.3}, {{1, "B"}, 0.7}};
-
-uint dma_canal;
-dma_channel_config dma_cfg;
-signal_t sinal;
-ei_impulse_result_t resultado;
-
-volatile int16_t adc_buffer[NUMERO_AMOSTRAS_ADC];
-
-bool estado_botao_A = false;
-bool estado_anterior_botao_A = false;
-bool estado_botao_B = false;
-bool estado_anterior_botao_B = false;
+#include "main.h"
 
 int main()
 {
     stdio_init_all();
-    configurar_gpio(PINO_LED_AZUL);
-    configurar_gpio(PINO_LED_VERMELHO);
-    configurar_gpio(PINO_LED_VERDE);
-    configurar_adc(PINO_MICROFONE, CANAL_MICROFONE);
+    configurar_gpio();
+    configurar_adc();
     configurar_dma();
     configurar_classificador();
 
@@ -80,8 +19,9 @@ int main()
             gravar_audio();
             gerar_letra_aleatoria();
             classificar_letra();
-            printf("Gerada - > Id: %d | Letra: %s\n", letra_gerada.id, letra_gerada.descricao);
-            printf("Classificada -> Id: %d | Letra: %s | Probabilidade: %.2f\n", letra_classificada.letra.id, letra_classificada.letra.descricao, letra_classificada.probabilidade);
+            printf("Gerada - > Id: %d | Letra: %s\n", jogo.resposta_gabarito.id, jogo.resposta_gabarito.descricao);
+            printf("Classificada -> Id: %d | Letra: %s\n", jogo.resposta_jogador.id, jogo.resposta_jogador.descricao);
+            corrigir_jogador();
         }
         else if (estado_botao_B && estado_botao_B != estado_anterior_botao_B)
         {
@@ -99,12 +39,29 @@ int main()
 void gerar_letra_aleatoria()
 {
     uint8_t id_aleatorio = rand() % NUM_LETRAS;
-    letra_gerada.id = vogais[id_aleatorio].id;
-    strcpy(letra_gerada.descricao, vogais[id_aleatorio].descricao);
+    jogo.resposta_gabarito.id = id_aleatorio;
+    strcpy(jogo.resposta_gabarito.descricao, vogais[id_aleatorio].descricao);
 }
+
+void corrigir_jogador()
+{
+    uint8_t result = strcmp(jogo.resposta_jogador.descricao, jogo.resposta_gabarito.descricao);
+    if (result == 0)
+    {
+        jogo.pontos += 1;
+        printf("Jogador acertou a letra e ganhou 1 ponto.\n");
+    }
+}
+
 void classificar_letra()
 {
+    Classificador letra_classificada = {{0, ""}, -1};
     int res = run_classifier(&sinal, &resultado, false);
+
+    if (res != 0) {
+        printf("Erro ao executar o classificador.\n");
+        return;
+    }
 
     for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++)
     {
@@ -116,6 +73,13 @@ void classificar_letra()
             letra_classificada.probabilidade = resultado.classification[i].value;
         }
     }
+    definir_resposta_jogador(letra_classificada.letra.id, letra_classificada.letra.descricao);
+}
+
+void definir_resposta_jogador(uint8_t id, const char* descricao){
+    jogo.resposta_jogador.id = id;
+    strcpy(jogo.resposta_jogador.descricao, descricao);
+    printf("Resposta da Inferência: %s\n", descricao);
 }
 
 void configurar_classificador()
@@ -129,7 +93,7 @@ int classificar_audio(size_t offset, size_t quantidade_amostras, float *classifi
 {
     for (size_t i = 0; i < quantidade_amostras; i++)
     {
-        classificados[i] = adc_buffer[i]; // Substituir por leitura real do ADC
+        classificados[i] = adc_buffer[i];
     }
     return 0;
 }
@@ -179,21 +143,30 @@ void alterar_status(bool vermelho, bool verde, bool azul)
     gpio_put(PINO_LED_AZUL, azul);
 }
 
-void configurar_adc(uint8_t pino, uint8_t canal)
+void configurar_adc()
 {
     uint32_t divisor = FREQUENCIA_PADRAO_ADC / (FREQUENCIA_DESEJADA_ADC);
     adc_init();
-    adc_gpio_init(pino);
+    adc_gpio_init(PINO_MICROFONE);
     adc_set_clkdiv(divisor);
-    adc_select_input(canal);
+    adc_select_input(CANAL_MICROFONE);
     adc_fifo_setup(true, true, 1, false, false);
     printf("ADC configurado.\n");
 }
-void configurar_gpio(uint8_t porta)
+
+void configurar_gpio()
 {
-    gpio_init(porta);
-    gpio_set_dir(porta, GPIO_OUT);
-    gpio_put(porta, false);
+    gpio_init(PINO_LED_VERMELHO);
+    gpio_set_dir(PINO_LED_VERMELHO, GPIO_OUT);
+    gpio_put(PINO_LED_VERMELHO, false);
+
+    gpio_init(PINO_LED_VERDE);
+    gpio_set_dir(PINO_LED_VERDE, GPIO_OUT);
+    gpio_put(PINO_LED_VERDE, false);
+
+    gpio_init(PINO_LED_AZUL);
+    gpio_set_dir(PINO_LED_AZUL, GPIO_OUT);
+    gpio_put(PINO_LED_AZUL, false);
 
     gpio_init(PINO_BOTAO_A);
     gpio_pull_up(PINO_BOTAO_A);
@@ -202,7 +175,7 @@ void configurar_gpio(uint8_t porta)
     gpio_init(PINO_BOTAO_B);
     gpio_pull_up(PINO_BOTAO_B);
     gpio_set_dir(PINO_BOTAO_B, GPIO_IN);
-    printf("GPIO configurado.\n");
+    printf("GPIO's configurados.\n");
 }
 
 void configurar_dma()
