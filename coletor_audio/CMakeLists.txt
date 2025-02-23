@@ -39,7 +39,7 @@ add_executable(coletor_audio coletor_audio.cpp )
 
 
 pico_set_program_name(coletor_audio "coletor_audio")
-pico_set_program_version(coletor_audio "0.1")
+pico_set_program_version(coletor_audio "1.0")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(coletor_audio 0)
@@ -62,7 +62,6 @@ target_include_directories(coletor_audio PRIVATE
 target_link_libraries(coletor_audio 
         hardware_adc
         hardware_dma
-        hardware_irq
         )
 
 pico_add_extra_outputs(coletor_audio)
