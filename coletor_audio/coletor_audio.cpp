@@ -2,26 +2,7 @@
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
 #include "hardware/dma.h"
-#include "hardware/irq.h"
-
-void gravar_audio(void);
-void alterar_status(bool, bool, bool);
-void configurar_gpio(uint8_t);
-void configurar_adc(uint8_t, uint8_t);
-void configurar_dma(void);
-void enviar_amostras_microfone_serial(void);
-void remover_componente_dc(void);
-
-#define PINO_LED_AZUL 12
-#define PINO_LED_VERDE 11
-#define PINO_LED_VERMELHO 13
-#define PINO_MICROFONE 28
-#define CANAL_MICROFONE 2
-#define PINO_BOTAO_A 5
-#define NUMERO_AMOSTRAS_ADC 16000
-#define FREQUENCIA_DESEJADA_ADC 16000
-#define FREQUENCIA_PADRAO_ADC 48000000
-#define OFFSET_DC_ADC 2048
+#include "coletor_audio.h"
 
 uint dma_canal;
 dma_channel_config dma_cfg;
@@ -33,15 +14,13 @@ bool estado_anterior_botao_A = false;
 
 int main()
 {
-    // teste
     stdio_init_all();
     configurar_gpio(PINO_LED_AZUL);
     configurar_gpio(PINO_LED_VERMELHO);
     configurar_gpio(PINO_LED_VERDE);
     configurar_adc(PINO_MICROFONE, CANAL_MICROFONE);
     configurar_dma();
-    irq_set_exclusive_handler(DMA_IRQ_0, enviar_amostras_microfone_serial);
-    irq_set_enabled(DMA_IRQ_0, true);
+
 
     while (true)
     {
@@ -65,7 +44,6 @@ void enviar_amostras_microfone_serial()
     {
         printf("%d\n", adc_buffer[i]);
     }
-
 }
 
 void gravar_audio()

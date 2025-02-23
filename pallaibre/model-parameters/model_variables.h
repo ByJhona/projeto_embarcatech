@@ -46,7 +46,7 @@
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/classifier/inferencing_engines/engines.h"
 
-const char* ei_classifier_inferencing_categories[] = { "A", "B" };
+const char* ei_classifier_inferencing_categories[] = { "A", "E", "I", "O", "U" };
 
 ei_dsp_named_axis_t ei_dsp_config_5_named_axes[] = {
     { .name = "Signal", .axis = 0 }
@@ -92,7 +92,7 @@ const ei_config_tflite_eon_graph_t ei_config_tflite_graph_4 = {
     .model_output = &tflite_learn_4_output,
 };
 
-const ei_learning_block_config_tflite_graph_t ei_learning_block_config_4 = {
+ei_learning_block_config_tflite_graph_t ei_learning_block_config_4 = {
     .implementation_version = 1,
     .classification_mode = EI_CLASSIFIER_CLASSIFICATION_MODE_CLASSIFICATION,
     .block_id = 4,
@@ -119,7 +119,7 @@ const ei_learning_block_t ei_learning_blocks[ei_learning_blocks_size] = {
         EI_CLASSIFIER_IMAGE_SCALING_NONE,
         ei_learning_block_4_inputs,
         ei_learning_block_4_inputs_size,
-        2
+        5
     },
 };
 
@@ -135,7 +135,7 @@ const ei_impulse_t impulse_628363_0 = {
     .project_name = "Palibras",
     .impulse_id = 1,
     .impulse_name = "Impulse #1",
-    .deploy_version = 2,
+    .deploy_version = 4,
 
     .nn_input_frame_size = 3960,
     .raw_sample_count = 16000,
@@ -156,7 +156,7 @@ const ei_impulse_t impulse_628363_0 = {
     .visual_ad_grid_size_x = 0,
     .visual_ad_grid_size_y = 0,
     
-    .tflite_output_features_count = 2,
+    .tflite_output_features_count = 5,
     .learning_blocks_size = ei_learning_blocks_size,
     .learning_blocks = ei_learning_blocks,
 
@@ -171,7 +171,7 @@ const ei_impulse_t impulse_628363_0 = {
     .slices_per_model_window = 4,
 
     .has_anomaly = EI_ANOMALY_TYPE_UNKNOWN,
-    .label_count = 2,
+    .label_count = 5,
     .categories = ei_classifier_inferencing_categories,
     .object_detection_nms = ei_object_detection_nms
 };
