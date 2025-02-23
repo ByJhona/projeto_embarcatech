@@ -1,5 +1,6 @@
 #include "main.h"
 
+
 int main()
 {
     stdio_init_all();
@@ -7,6 +8,8 @@ int main()
     configurar_adc();
     configurar_dma();
     configurar_classificador();
+    configurar_display_pixel();
+    desenhar_display();
 
     while (true)
     {
@@ -16,17 +19,33 @@ int main()
 
         if (estado_botao_A && estado_botao_A != estado_anterior_botao_A)
         {
-            gravar_audio();
+
             gerar_letra_aleatoria();
-            classificar_letra();
+            limpar_display_pixel();
+            desenhar_display();
+            colorir_resposta_gabarito();
+            desenhar_display();
+            
             printf("Gerada - > Id: %d | Letra: %s\n", jogo.resposta_gabarito.id, jogo.resposta_gabarito.descricao);
-            printf("Classificada -> Id: %d | Letra: %s\n", jogo.resposta_jogador.id, jogo.resposta_jogador.descricao);
-            corrigir_jogador();
         }
         else if (estado_botao_B && estado_botao_B != estado_anterior_botao_B)
         {
             gravar_audio();
-            enviar_amostras_microfone_serial();
+            classificar_letra();
+            corrigir_jogador();
+
+            limpar_display_pixel();
+            desenhar_display();
+            sleep_ms(1000);
+
+            colorir_resposta_jogador();
+            desenhar_display();
+            sleep_ms(5000);
+            limpar_display_pixel();
+            desenhar_display();
+            printf("Classificada -> Id: %d | Letra: %s\n", jogo.resposta_jogador.id, jogo.resposta_jogador.descricao);
+
+
         }
 
         estado_anterior_botao_A = estado_botao_A;
@@ -36,11 +55,104 @@ int main()
     }
 }
 
+void configurar_display_pixel()
+{
+
+    uint offset = pio_add_program(pio0, &ws2818b_program);
+    display_pio = pio0;
+
+    sm = pio_claim_unused_sm(display_pio, false);
+    if (sm < 0)
+    {
+        display_pio = pio1;
+        sm = pio_claim_unused_sm(display_pio, true);
+    }
+
+    iniciar_pio(display_pio, sm, offset, PINO_PIO, 800000.f);
+
+    for (uint i = 0; i < NUM_PIXEL; ++i)
+    {
+        display[i].R = 0;
+        display[i].G = 0;
+        display[i].B = 0;
+    }
+}
+
+void colorir_resposta_gabarito()
+{
+    for (uint8_t index = 0, i = 23; index <= 2 && i >= 3; index++, i -= 10)
+    {
+        if (jogo.resposta_gabarito.escrita[index] == 1)
+        {
+            colorir_pixel(i, 0, 0, 1);
+            printf("Entrou aqui para index %d\n", index);
+        }
+    }
+
+    for (uint8_t index = 3, i = 21; index <= 5 && i >= 1; index++, i -= 10)
+    {
+        if (jogo.resposta_gabarito.escrita[index] == 1)
+        {
+            colorir_pixel(i, 0, 0, 1);
+        }
+    }
+}
+
+
+void colorir_resposta_jogador()
+{
+    for (uint8_t index = 0, i = 23; index <= 2 && i >= 3; index++, i -= 10)
+    {
+        if (jogo.resposta_jogador.escrita[index] == 1)
+        {
+            colorir_pixel(i, 1, 0, 1);
+        }
+    }
+
+    for (uint8_t index = 3, i = 21; index <= 5 && i >= 1; index++, i -= 10)
+    {
+        if (jogo.resposta_jogador.escrita[index] == 1)
+        {
+            colorir_pixel(i, 1, 0, 1);
+        }
+    }
+}
+
+
+void colorir_pixel(uint8_t indice, uint8_t r, uint8_t g, uint8_t b)
+{
+    display[indice].R = r;
+    display[indice].G = g;
+    display[indice].B = b;
+}
+
+void limpar_display_pixel()
+{
+    for (uint i = 0; i < NUM_PIXEL; ++i)
+        colorir_pixel(i, 0, 0, 0);
+}
+void desenhar_display()
+{
+    for (uint i = 0; i < NUM_PIXEL; ++i)
+    {
+        pio_sm_put_blocking(display_pio, sm, display[i].G);
+        pio_sm_put_blocking(display_pio, sm, display[i].R);
+        pio_sm_put_blocking(display_pio, sm, display[i].B);
+    }
+    sleep_us(100);
+}
+
 void gerar_letra_aleatoria()
 {
+    srand(time(NULL));  // Define a semente uma única vez
     uint8_t id_aleatorio = rand() % NUM_LETRAS;
     jogo.resposta_gabarito.id = id_aleatorio;
     strcpy(jogo.resposta_gabarito.descricao, vogais[id_aleatorio].descricao);
+    for (int i = 0; i <= 5; i++)
+    {
+        jogo.resposta_gabarito.escrita[i] = vogais[id_aleatorio].escrita[i];
+        printf("%d - ", jogo.resposta_gabarito.escrita[i]);
+    }
 }
 
 void corrigir_jogador()
@@ -58,7 +170,8 @@ void classificar_letra()
     Classificador letra_classificada = {{0, ""}, -1};
     int res = run_classifier(&sinal, &resultado, false);
 
-    if (res != 0) {
+    if (res != 0)
+    {
         printf("Erro ao executar o classificador.\n");
         return;
     }
@@ -76,11 +189,17 @@ void classificar_letra()
     definir_resposta_jogador(letra_classificada.letra.id, letra_classificada.letra.descricao);
 }
 
-void definir_resposta_jogador(uint8_t id, const char* descricao){
+void definir_resposta_jogador(uint8_t id, const char *descricao)
+{
     jogo.resposta_jogador.id = id;
     strcpy(jogo.resposta_jogador.descricao, descricao);
+    for (int i = 0; i <= 5; i++)
+    {
+        jogo.resposta_jogador.escrita[i] = vogais[id].escrita[i];
+    }
     printf("Resposta da Inferência: %s\n", descricao);
 }
+
 
 void configurar_classificador()
 {

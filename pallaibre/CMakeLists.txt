@@ -19,7 +19,7 @@ set(sdkVersion 2.1.0)
 set(toolchainVersion 13_3_Rel1)
 set(picotoolVersion 2.1.0)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
-if (EXISTS ${picoVscode})
+if(EXISTS ${picoVscode})
     include(${picoVscode})
 endif()
 
@@ -29,7 +29,6 @@ set(PICO_SDK_PATH "/mnt/c/Users/Jhon/.pico-sdk/sdk/2.1.0")
 include_directories("${PICO_SDK_PATH}/src/boards/include")
 include_directories("${PICO_SDK_PATH}/src/common/pico_base_headers/include")
 include_directories("${PICO_SDK_PATH}/src/common/pico_stdlib_headers/include")
-
 set(PROJECT_FOLDER .)
 
 include(pico_sdk_import.cmake)
@@ -41,19 +40,22 @@ set(CMAKE_CXX_STANDARD 11)
 pico_sdk_init()
 
 add_definitions(-DEIDSP_QUANTIZE_FILTERBANK=0
-                -DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=0
-                -DARM_MATH_LOOPUNROLL
-                )
+-DEI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN=0
+-DARM_MATH_LOOPUNROLL
+)
 
 add_executable(app
-  source/main.cpp
-  )
+source/main.cpp
+)
 
+pico_generate_pio_header(app ${CMAKE_CURRENT_LIST_DIR}/ws2818b.pio)
 include(${PROJECT_FOLDER}/edge-impulse-sdk/cmake/utils.cmake)
 
 target_link_libraries(app pico_stdlib
-hardware_adc
-hardware_dma)
+    hardware_adc
+    hardware_dma
+    hardware_pio
+    hardware_clocks)
 
 
 
@@ -61,6 +63,9 @@ target_include_directories(app PRIVATE
     ${PROJECT_FOLDER}/tflite-model
     ${PROJECT_FOLDER}/model-parameters
     ${PROJECT_FOLDER}
+    ${CMAKE_CURRENT_LIST_DIR}
+
+
 )
 
 # enable usb output, disable uart output
