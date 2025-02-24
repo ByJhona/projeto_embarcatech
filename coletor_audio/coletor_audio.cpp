@@ -21,18 +21,10 @@ int main()
     configurar_adc(PINO_MICROFONE, CANAL_MICROFONE);
     configurar_dma();
 
-
     while (true)
     {
-
-        estado_botao_A = !gpio_get(PINO_BOTAO_A);
-
-        if(estado_botao_A && estado_botao_A != estado_anterior_botao_A){
-            gravar_audio();
-            enviar_amostras_microfone_serial();
-        }
-
-        estado_anterior_botao_A = estado_botao_A;
+        gravar_audio();
+        enviar_amostras_microfone_serial();
         sleep_ms(100);
     }
 }
@@ -56,12 +48,10 @@ void gravar_audio()
                           &(adc_hw->fifo),
                           NUMERO_AMOSTRAS_ADC,
                           true);
-    sleep_ms(1000);
-    alterar_status(false, true, false);
     adc_run(true);
     dma_channel_wait_for_finish_blocking(dma_canal);
     adc_run(false);
-    alterar_status(false, false, false);
+    alterar_status(false, true, false);
     remover_componente_dc();
 }
 

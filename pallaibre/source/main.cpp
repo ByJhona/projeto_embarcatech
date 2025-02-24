@@ -23,6 +23,7 @@ int main()
             gerar_letra_aleatoria();
             limpar_display_pixel();
             desenhar_display();
+            sleep_ms(500);
             colorir_resposta_gabarito();
             desenhar_display();
             
@@ -32,6 +33,7 @@ int main()
         {
             gravar_audio();
             classificar_letra();
+            printf("Classificada -> Id: %d | Letra: %s\n", jogo.resposta_jogador.id, jogo.resposta_jogador.descricao);
             corrigir_jogador();
 
             limpar_display_pixel();
@@ -43,8 +45,6 @@ int main()
             sleep_ms(5000);
             limpar_display_pixel();
             desenhar_display();
-            printf("Classificada -> Id: %d | Letra: %s\n", jogo.resposta_jogador.id, jogo.resposta_jogador.descricao);
-
 
         }
 
@@ -57,7 +57,6 @@ int main()
 
 void configurar_display_pixel()
 {
-
     uint offset = pio_add_program(pio0, &ws2818b_program);
     display_pio = pio0;
 
@@ -85,7 +84,6 @@ void colorir_resposta_gabarito()
         if (jogo.resposta_gabarito.escrita[index] == 1)
         {
             colorir_pixel(i, 0, 0, 1);
-            printf("Entrou aqui para index %d\n", index);
         }
     }
 
@@ -151,7 +149,6 @@ void gerar_letra_aleatoria()
     for (int i = 0; i <= 5; i++)
     {
         jogo.resposta_gabarito.escrita[i] = vogais[id_aleatorio].escrita[i];
-        printf("%d - ", jogo.resposta_gabarito.escrita[i]);
     }
 }
 
@@ -162,6 +159,8 @@ void corrigir_jogador()
     {
         jogo.pontos += 1;
         printf("Jogador acertou a letra e ganhou 1 ponto.\n");
+    }else{
+        printf("Jogador errou!!.\n");
     }
 }
 
